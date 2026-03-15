@@ -1,10 +1,18 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 export default function Chat() {
+  const router = useRouter();
+  const [showReportForm, setShowReportForm] = useState(false);
+  const [reportName, setReportName] = useState("");
+  const [reportEmail, setReportEmail] = useState("");
+  const [reportBusiness, setReportBusiness] = useState("");
+  const [generating, setGenerating] = useState(false);
+
   const { messages, input, handleInputChange, handleSubmit, isLoading } =
     useChat({
       initialMessages: [
@@ -30,6 +38,24 @@ export default function Chat() {
     }
   }, [isLoading]);
 
+  // Show report form after enough back-and-forth (at least 10 messages)
+  useEffect(() => {
+    if (messages.length >= 10 && !showReportForm) {
+      const lastFew = messages.slice(-4);
+      const mentionsReport = lastFew.some(
+        (m) =>
+          m.content.toLowerCase().includes("report") ||
+          m.content.toLowerCase().includes("analysis") ||
+          m.content.toLowerCase().includes("email") ||
+          m.content.toLowerCase().includes("business name") ||
+          m.content.toLowerCase().includes("sample-report")
+      );
+      if (mentionsReport) {
+        setShowReportForm(true);
+      }
+    }
+  }, [messages, showReportForm]);
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -39,15 +65,56 @@ export default function Chat() {
     }
   };
 
+  const handleGenerateReport = async () => {
+    if (!reportName.trim() || !reportEmail.trim() || !reportBusiness.trim())
+      return;
+
+    setGenerating(true);
+    try {
+      const res = await fetch("/api/report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: messages.map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
+          name: reportName,
+          email: reportEmail,
+          businessName: reportBusiness,
+        }),
+      });
+
+      if (!res.ok) throw new Error("Failed to generate report");
+
+      const report = await res.json();
+      sessionStorage.setItem("tabula-rasa-report", JSON.stringify(report));
+      router.push("/report");
+    } catch (err) {
+      console.error(err);
+      alert("Something went wrong generating the report. Please try again.");
+      setGenerating(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col">
       {/* Header */}
       <header className="border-b border-slate-800 px-6 py-4 flex items-center justify-between shrink-0">
-        <Link href="/" className="text-slate-500 hover:text-slate-300 text-sm transition-colors">
+        <Link
+          href="/"
+          className="text-slate-500 hover:text-slate-300 text-sm transition-colors"
+        >
           &larr; Back
         </Link>
         <h1 className="text-lg font-semibold tracking-tight">Tabula Rasa</h1>
-        <div className="w-12" />
+        <button
+          onClick={() => setShowReportForm(true)}
+          className="text-slate-500 hover:text-slate-300 text-sm transition-colors"
+          title="Generate your report"
+        >
+          Get Report
+        </button>
       </header>
 
       {/* Messages */}
@@ -96,6 +163,66 @@ export default function Chat() {
           <div ref={messagesEndRef} />
         </div>
       </div>
+
+      {/* Report Generation Form */}
+      {showReportForm && (
+        <div className="border-t border-slate-800 bg-slate-900/95 px-4 py-5 shrink-0">
+          <div className="max-w-2xl mx-auto">
+            <h3 className="text-sm font-semibold text-amber-500 mb-3">
+              Generate Your Personalized Report
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+              <input
+                type="text"
+                placeholder="Your name"
+                value={reportName}
+                onChange={(e) => setReportName(e.target.value)}
+                className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500/50"
+              />
+              <input
+                type="email"
+                placeholder="Your email"
+                value={reportEmail}
+                onChange={(e) => setReportEmail(e.target.value)}
+                className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500/50"
+              />
+              <input
+                type="text"
+                placeholder="Business name"
+                value={reportBusiness}
+                onChange={(e) => setReportBusiness(e.target.value)}
+                className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500/50"
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleGenerateReport}
+                disabled={
+                  generating ||
+                  !reportName.trim() ||
+                  !reportEmail.trim() ||
+                  !reportBusiness.trim()
+                }
+                className="bg-amber-500 hover:bg-amber-400 disabled:bg-slate-700 disabled:text-slate-500 text-slate-950 font-semibold px-5 py-2 rounded-lg transition-colors text-sm"
+              >
+                {generating ? "Generating..." : "Generate My Report"}
+              </button>
+              <button
+                onClick={() => setShowReportForm(false)}
+                className="text-slate-500 hover:text-slate-300 text-sm transition-colors"
+              >
+                Not yet — keep chatting
+              </button>
+            </div>
+            {generating && (
+              <p className="text-slate-500 text-xs mt-2">
+                Analyzing your conversation and building your SWOT analysis.
+                This takes about 15-20 seconds.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Input */}
       <div className="border-t border-slate-800 px-4 py-4 shrink-0">
